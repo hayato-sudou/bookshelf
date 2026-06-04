@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { searchBooks } from "../utils/googleBooksApi";
 
 // ─── カバーカラー定義 ──────────────────────────────────────────────────────────
@@ -164,11 +164,17 @@ export default function AddBookModal({ onClose, onAdd }) {
   const [tab, setTab] = useState("search"); // "search" | "manual"
 
   // 検索タブ
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const searchInputRef = useRef(null);
+  const [query, setQuery]         = useState("");
+  const [results, setResults]     = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [searched, setSearched]   = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]     = useState(false);
+  const [startIndex, setStartIndex] = useState(0);
+  const searchInputRef             = useRef(null);
+  const loaderRef                  = useRef(null);
+  const INITIAL_COUNT              = 5;
+  const MORE_COUNT                 = 15;
 
   // 手動登録タブ
   const [manual, setManual] = useState({
@@ -181,16 +187,66 @@ export default function AddBookModal({ onClose, onAdd }) {
     if (tab === "search") setTimeout(() => searchInputRef.current?.focus(), 50);
   }, [tab]);
 
-  // ── Google Books 検索 ──
+// ── Google Books 検索（初回） ──
 const handleSearch = async () => {
   if (!query.trim()) return;
-  setLoading(true); setSearched(true);
+  setLoading(true);
+  setSearched(true);
+  setResults([]);
+  setStartIndex(0);
+  setHasMore(false);
   try {
-    const items = await searchBooks(query.trim(), 10);
-    setResults(items);   // ← BookInfo型（authors, pageCount等が整形済み）
-  } catch { setResults([]); }
+    const params = new URLSearchParams({
+      q:          query.trim(),
+      maxResults: String(INITIAL_COUNT),
+      startIndex: "0",
+    });
+    const res   = await fetch(`/api/books/search?${params}`);
+    const data  = await res.json();
+    const items = data.items ?? [];
+    setResults(items);
+    setHasMore(items.length >= INITIAL_COUNT);
+    setStartIndex(INITIAL_COUNT);
+  } catch {
+    setResults([]);
+  }
   setLoading(false);
 };
+
+// ── 追加ロード ──
+const handleLoadMore = useCallback(async () => {
+  if (loadingMore || !hasMore) return;
+  setLoadingMore(true);
+  try {
+    const params = new URLSearchParams({
+      q:          query.trim(),
+      maxResults: String(MORE_COUNT),
+      startIndex: String(startIndex),
+    });
+    const res   = await fetch(`/api/books/search?${params}`);
+    const data  = await res.json();
+    const items = data.items ?? [];
+    setResults(prev => {
+      const existingIds = new Set(prev.map(i => i.id));
+      return [...prev, ...items.filter(i => !existingIds.has(i.id))];
+    });
+    setHasMore(false);
+    setStartIndex(prev => prev + items.length);
+  } catch {}
+  setLoadingMore(false);
+}, [loadingMore, hasMore, query, startIndex]);
+
+// ── スクロール末尾検知 ──
+useEffect(() => {
+  const el = loaderRef.current;
+  if (!el) return;
+  const observer = new IntersectionObserver(
+    ([entry]) => { if (entry.isIntersecting) handleLoadMore(); },
+    { threshold: 0.1 }
+  );
+  observer.observe(el);
+  return () => observer.disconnect();
+}, [handleLoadMore]);
 
   // ── API結果から本を登録 ──
   const handleSelectApiBook = (item) => {
@@ -317,45 +373,67 @@ const handleSearch = async () => {
                 </div>
               </div>
 
-              {/* 結果エリア */}
-              <div style={{ overflowY: "auto", padding: "0 12px 16px", flex: 1, minHeight: 0 }}>
-                {loading && (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 28, display: "inline-block",
-                      animation: "spin 1s linear infinite" }}>⟳</div>
-                    <div style={{ fontSize: 12, color: "#6A5A4A", marginTop: 8 }}>検索中...</div>
-                  </div>
-                )}
-                {!loading && results.map(item => (
-                  <SearchResultCard key={item.id} item={item} onSelect={handleSelectApiBook} />
-                ))}
-                {!loading && searched && results.length === 0 && (
-                  <div style={{ textAlign: "center", padding: "40px 0" }}>
-                    <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
-                    <div style={{ fontSize: 13, color: "#6A5A4A", marginBottom: 12 }}>
-                      検索結果が見つかりませんでした
-                    </div>
-                    <button onClick={() => setTab("manual")} style={{
-                      fontSize: 12, color: "#C4956A", background: "none",
-                      border: "1px solid rgba(196,168,130,0.25)", borderRadius: 8,
-                      padding: "7px 16px", cursor: "pointer", fontFamily: "inherit",
-                      transition: "background 0.15s",
-                    }}
-                      onMouseEnter={e => e.target.style.background = "rgba(196,168,130,0.08)"}
-                      onMouseLeave={e => e.target.style.background = "none"}>
-                      ✏️ 手動で登録する →
-                    </button>
-                  </div>
-                )}
-                {!loading && !searched && (
-                  <div style={{ textAlign: "center", padding: "44px 0" }}>
-                    <div style={{ fontSize: 44, marginBottom: 10, opacity: 0.25 }}>🔍</div>
-                    <div style={{ fontSize: 12, color: "#4A3A2A" }}>
-                      キーワードを入力して検索してください
-                    </div>
-                  </div>
-                )}
-              </div>
+{/* 結果エリア */}
+<div style={{ overflowY: "auto", padding: "0 12px 16px", flex: 1, minHeight: 0 }}>
+
+  {loading && (
+    <div style={{ textAlign: "center", padding: "40px 0" }}>
+      <div style={{ fontSize: 28, display: "inline-block",
+        animation: "spin 1s linear infinite" }}>⟳</div>
+      <div style={{ fontSize: 12, color: "#6A5A4A", marginTop: 8 }}>検索中...</div>
+    </div>
+  )}
+
+  {!loading && results.map(item => (
+    <SearchResultCard key={item.id} item={item} onSelect={handleSelectApiBook} />
+  ))}
+
+  {/* 無限スクロールのトリガー要素 */}
+  {hasMore && (
+    <div ref={loaderRef} style={{ padding: "16px 0", textAlign: "center" }}>
+      {loadingMore
+        ? <div style={{ fontSize: 12, color: "#6A5A4A" }}>さらに読み込み中...</div>
+        : <div style={{ fontSize: 11, color: "#4A3A2A" }}>スクロールで続きを表示</div>
+      }
+    </div>
+  )}
+
+  {/* 終端メッセージ */}
+  {!loading && !hasMore && results.length > 0 && (
+    <div style={{ textAlign: "center", padding: "12px 0",
+      fontSize: 11, color: "#4A3A2A",
+      borderTop: "1px solid rgba(196,168,130,0.08)" }}>
+      全 {results.length} 件を表示しました
+    </div>
+  )}
+
+  {/* 検索結果なし */}
+  {!loading && searched && results.length === 0 && (
+    <div style={{ textAlign: "center", padding: "40px 0" }}>
+      <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+      <div style={{ fontSize: 13, color: "#6A5A4A", marginBottom: 12 }}>
+        検索結果が見つかりませんでした
+      </div>
+      <button onClick={() => setTab("manual")} style={{
+        fontSize: 12, color: "#C4956A", background: "none",
+        border: "1px solid rgba(196,168,130,0.25)", borderRadius: 8,
+        padding: "7px 16px", cursor: "pointer", fontFamily: "inherit",
+      }}>
+        ✏️ 手動で登録する →
+      </button>
+    </div>
+  )}
+
+  {/* 未検索 */}
+  {!loading && !searched && (
+    <div style={{ textAlign: "center", padding: "44px 0" }}>
+      <div style={{ fontSize: 44, marginBottom: 10, opacity: 0.25 }}>🔍</div>
+      <div style={{ fontSize: 12, color: "#4A3A2A" }}>
+        キーワードを入力して検索してください
+      </div>
+    </div>
+  )}
+</div>
             </div>
           )}
 

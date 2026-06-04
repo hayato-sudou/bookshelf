@@ -4,60 +4,44 @@ import { NextRequest, NextResponse } from "next/server";
 // § 1. 正規化ユーティリティ
 // ══════════════════════════════════════════════════════
 
-/** 全角英数記号 → 半角 */
 function toHalfWidth(str: string): string {
   return str
     .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) =>
       String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
     )
-    .replace(/　/g, " ")   // 全角スペース → 半角
-    .replace(/．/g, ".")   // 全角ピリオド → 半角
-    .replace(/・/g, "·");  // 中黒 → 正規中点（後で除去）
+    .replace(/　/g, " ")
+    .replace(/．/g, ".")
+    .replace(/・/g, "·");
 }
 
-/** 検索ノイズ除去：中黒・中点・スペースを除去して連結 */
-function normalize(str: string): string {
-  return toHalfWidth(str)
-    .replace(/[·・\s\-\.]/g, "") // 中黒・スペース・ハイフン・ピリオド除去
-    .toLowerCase();
-}
-
-/** 著者名プレフィックスを除去して名前だけ取り出す */
 function stripAuthorPrefix(str: string): string {
   return str.replace(/^(著者?|作者?|訳者?)[：:]\s*/, "").trim();
 }
 
 // ══════════════════════════════════════════════════════
-// § 2. カタカナ ↔ ローマ字 対応辞書
-//    （よく検索される外国人著者名のみ。必要に応じて追加）
+// § 2. カタカナ → ローマ字辞書
 // ══════════════════════════════════════════════════════
 
 const KATAKANA_TO_ROMAN: [RegExp, string][] = [
-  // ── ホラー・ミステリ ──
-  [/スティーブン?キング/,          "Stephen King"],
-  [/アガサ?クリスティ/,            "Agatha Christie"],
-  [/アーサー?コナン?ドイル/,       "Arthur Conan Doyle"],
-  // ── SF・ファンタジー ──
-  [/J\.?K\.?ローリング/i,          "J.K. Rowling"],
-  [/ジョージ?R\.?R\.?マーティン/i, "George R.R. Martin"],
-  [/アシモフ|アイザック?アシモフ/,  "Isaac Asimov"],
-  // ── 文学 ──
-  [/ドストエフスキ[ーイ]/,          "Dostoevsky"],
-  [/トルストイ/,                   "Tolstoy"],
-  [/カフカ/,                       "Kafka"],
-  [/ヘミングウェイ/,               "Hemingway"],
-  [/ガルシア?マルケス/,            "Garcia Marquez"],
-  // ── ビジネス・自己啓発 ──
-  [/ドラッカー/,                   "Drucker"],
-  [/マルコム?グラッドウェル/,      "Malcolm Gladwell"],
-  // ── 現代小説 ──
-  [/ダン?ブラウン/,                "Dan Brown"],
-  [/パウロ?コエーリョ/,            "Paulo Coelho"],
+  [/スティーブン?キング/,           "Stephen King"],
+  [/アガサ?クリスティ/,             "Agatha Christie"],
+  [/アーサー?コナン?ドイル/,        "Arthur Conan Doyle"],
+  [/J\.?K\.?ローリング/i,           "J.K. Rowling"],
+  [/ジョージ?R\.?R\.?マーティン/i,  "George R.R. Martin"],
+  [/アシモフ|アイザック?アシモフ/,   "Isaac Asimov"],
+  [/ドストエフスキ[ーイ]/,           "Dostoevsky"],
+  [/トルストイ/,                    "Tolstoy"],
+  [/カフカ/,                        "Kafka"],
+  [/ヘミングウェイ/,                "Hemingway"],
+  [/ガルシア?マルケス/,             "Garcia Marquez"],
+  [/ドラッカー/,                    "Drucker"],
+  [/マルコム?グラッドウェル/,       "Malcolm Gladwell"],
+  [/ダン?ブラウン/,                 "Dan Brown"],
+  [/パウロ?コエーリョ/,             "Paulo Coelho"],
 ];
 
-/** カタカナ著者名をローマ字に変換（一致しなければnull） */
 function katakanaToRoman(str: string): string | null {
-  const normalized = str.replace(/[·・\s]/g, ""); // 中黒・スペース除去してから照合
+  const normalized = str.replace(/[·・\s]/g, "");
   for (const [pattern, roman] of KATAKANA_TO_ROMAN) {
     if (pattern.test(normalized)) return roman;
   }
@@ -65,59 +49,123 @@ function katakanaToRoman(str: string): string | null {
 }
 
 // ══════════════════════════════════════════════════════
-// § 3. クエリ組み立て
+// § 3. 「タイトル 著者」複合パターン判定
+//    スペース区切りの2トークンで、片方が著者辞書にヒットする場合
+// ══════════════════════════════════════════════════════
+
+function tryParseCompound(input: string): string | null {
+  // 半角・全角スペースで最大2分割
+  const parts = input.split(/[\s　]+/);
+  if (parts.length < 2) return null;
+
+  // 先頭トークンが著者名の場合：著者 タイトル
+  const firstRoman = katakanaToRoman(parts[0]);
+  if (firstRoman) {
+    const titlePart = parts.slice(1).join(" ");
+    return `intitle:${titlePart}+inauthor:"${firstRoman}"`;
+  }
+
+  // 末尾トークンが著者名の場合：タイトル 著者
+  const lastRoman = katakanaToRoman(parts[parts.length - 1]);
+  if (lastRoman) {
+    const titlePart = parts.slice(0, -1).join(" ");
+    return `intitle:${titlePart}+inauthor:"${lastRoman}"`;
+  }
+
+  // 日本語著者名パターン（姓2文字+名2文字、スペース区切り）
+  // 例: "東野 圭吾 白夜行" → inauthor:東野圭吾 intitle:白夜行
+  if (parts.length >= 2 && /^[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]{1,4}$/.test(parts[0])) {
+    // 先頭2トークンを著者名候補とし、残りをタイトルとして試みる
+    const authorCandidate = parts.slice(0, 2).join("");
+    const titleCandidate  = parts.slice(2).join(" ");
+    if (titleCandidate) {
+      return `intitle:${titleCandidate}+inauthor:${authorCandidate}`;
+    }
+    // タイトルなし → 著者検索のみ
+    return `inauthor:${authorCandidate}`;
+  }
+
+  return null;
+}
+
+// ══════════════════════════════════════════════════════
+// § 4. メインのクエリ組み立て
 // ══════════════════════════════════════════════════════
 
 function buildQuery(raw: string): string {
   const input = raw.trim();
 
-  // ── ISBN判定: ハイフン除去後に10桁 or 13桁の数字 ──
+  // ISBN
   const digitsOnly = input.replace(/-/g, "");
   if (/^\d{10}$|^\d{13}$/.test(digitsOnly)) {
     return `isbn:${digitsOnly}`;
   }
 
-  // ── 著者指定プレフィックス判定 ──
+  // 著者指定プレフィックス
   if (/^(著者?|作者?|訳者?)[：:]/.test(input)) {
-    const name = stripAuthorPrefix(input);
+    const name  = stripAuthorPrefix(input);
     const roman = katakanaToRoman(name);
-    // ローマ字対応あり → カナ + ローマ字 両方で検索
     return roman
       ? `inauthor:${name}+OR+inauthor:"${roman}"`
       : `inauthor:${name}`;
   }
 
-  // ── タイトル検索（デフォルト）──
-  // 半角化して中黒・スペースを除去した「正規化済み文字列」でも検索
-  const normalizedInput = toHalfWidth(input)
-    .replace(/[·・]/g, " ") // 中黒はスペースに置換（Google側の分かち合いに対応）
+  // タイトル＋著者の複合パターン
+  const compound = tryParseCompound(input);
+  if (compound) return compound;
+
+  // タイトル検索（デフォルト）
+  const normalized = toHalfWidth(input)
+    .replace(/[·・]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  const roman = katakanaToRoman(input);
+  const roman       = katakanaToRoman(input);
+  const noSeparator = input.replace(/[·・\s]/g, "");
 
-  // ローマ字対応あり → カナタイトル + ローマ字タイトル を OR
   if (roman) {
-    return `intitle:${normalizedInput}+OR+intitle:"${roman}"`;
+    return `intitle:${normalized}+OR+intitle:"${roman}"`;
   }
-
-  // 中黒・スペースありとなし、両方で OR 検索
-  const noSeparator = input.replace(/[·・\s]/g, ""); // 区切りなし版
   if (noSeparator !== input) {
-    return `intitle:${normalizedInput}+OR+intitle:${noSeparator}`;
+    return `intitle:${normalized}+OR+intitle:${noSeparator}`;
   }
-
-  return `intitle:${normalizedInput}`;
+  return `intitle:${normalized}`;
 }
 
 // ══════════════════════════════════════════════════════
-// § 4. Route Handler
+// § 5. Route Handler
 // ══════════════════════════════════════════════════════
+
+async function fetchVolumes(
+  q: string,
+  maxResults: number,
+  startIndex: number,
+  withLangRestrict: boolean
+): Promise<any[]> {
+  const params = new URLSearchParams({
+    q,
+    maxResults:  String(maxResults),
+    startIndex:  String(startIndex),
+    orderBy:     "relevance",
+  });
+  if (withLangRestrict) params.set("langRestrict", "ja");
+
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
+  if (apiKey) params.set("key", apiKey);
+
+  const res = await fetch(
+    `https://www.googleapis.com/books/v1/volumes?${params.toString()}`
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.items ?? [];
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const q          = searchParams.get("q");
-  const maxResults = searchParams.get("maxResults") ?? "10";
+  const maxResults = Math.min(Number(searchParams.get("maxResults") ?? "5"), 40);
+  const startIndex = Number(searchParams.get("startIndex") ?? "0");
 
   if (!q || !q.trim()) {
     return NextResponse.json(
@@ -126,35 +174,31 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const params = new URLSearchParams({
-    q:            buildQuery(q),
-    maxResults:   String(Math.min(Math.max(1, Number(maxResults)), 40)),
-    langRestrict: "ja",
-    orderBy:      "relevance",
-  });
+  const query = buildQuery(q);
 
-  const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
-  if (apiKey) params.set("key", apiKey);
-
-  // デバッグ用（開発環境のみ）
   if (process.env.NODE_ENV === "development") {
-    console.log("[books/search] query:", params.get("q"));
+    console.log("[books/search] query:", query, "startIndex:", startIndex, "maxResults:", maxResults);
   }
 
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?${params.toString()}`
-    );
-    if (!res.ok) {
-      const errorBody = await res.text();
-      console.error("[books/search] Google API error:", res.status, errorBody);
-      return NextResponse.json(
-        { error: `Google Books API エラー: ${res.status}`, detail: errorBody },
-        { status: res.status }
+    // 邦書優先で取得
+    let items = await fetchVolumes(query, maxResults, startIndex, true);
+
+    // 追加ロード時（startIndex > 0）かつ件数不足 → langRestrict なしで補完
+    if (startIndex > 0 && items.length < maxResults) {
+      const supplement = await fetchVolumes(
+        query,
+        maxResults - items.length,
+        startIndex + items.length,
+        false
       );
+      // 重複除去（id基準）
+      const existingIds = new Set(items.map((i: any) => i.id));
+      items = [...items, ...supplement.filter((i: any) => !existingIds.has(i.id))];
     }
-    const data = await res.json();
-    return NextResponse.json(data);
+
+    return NextResponse.json({ items });
+
   } catch (err) {
     console.error("[books/search] fetch error:", err);
     return NextResponse.json(
