@@ -186,8 +186,10 @@ export default function AddBookModal({ onClose, onAdd }) {
     if (!query.trim()) return;
     setLoading(true); setSearched(true);
     try {
-      const books = await searchBooks(query, 10);
-      setResults(books);              // ← 整形済み BookInfo[] が入る
+      const params = new URLSearchParams({ q: query.trim(), maxResults: "10" });
+      const res = await fetch(`/api/books/search?${params}`);
+      const data = await res.json();
+      setResults(data.items || []);
     } catch { setResults([]); }
     setLoading(false);
   };
