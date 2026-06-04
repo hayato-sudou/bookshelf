@@ -189,7 +189,7 @@ export default function AddBookModal({ onClose, onAdd }) {
       const params = new URLSearchParams({ q: query.trim(), maxResults: "10" });
       const res = await fetch(`/api/books/search?${params}`);
       const data = await res.json();
-      setResults(data.items || []);
+      setResults(data.items || []);   // ← data.items がそのまま入るので構造は変わらない
     } catch { setResults([]); }
     setLoading(false);
   };
