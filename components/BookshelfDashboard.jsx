@@ -1,8 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabase";
-import { fetchUserBooks, addBook, updateUserBook, recordReadingProgress } from "@/utils/bookActions";
+import { fetchUserBooks, addBook, updateUserBook, recordReadingProgress, deleteUserBook } from "@/utils/bookActions";
 import AddBookModal, { ColorCover } from "@/components/AddBookModal";
+
 
 const STATUS_CONFIG = {
   all:       { label: "すべて",  color: "#C4A882" },
@@ -131,11 +132,12 @@ function BookCard({ book, onClick }) {
 }
 
 // ─── Book Detail Panel ────────────────────────────────────────────────────────
-function BookDetailPanel({ book, onClose, onUpdate }) {
+function BookDetailPanel({ book, onClose, onUpdate, onDelete }) {
   const [page, setPage] = useState(book.current_page || 0);
   const [note, setNote] = useState(book.notes || "");
   const [rating, setRating] = useState(book.rating || 0);
   const [burst, setBurst] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const pageCount = book.book?.page_count || 0;
 
   const handleSave = () => {
@@ -143,6 +145,10 @@ function BookDetailPanel({ book, onClose, onUpdate }) {
     if (added > 0) setBurst(true);
     onUpdate({ ...book, current_page: page, notes: note, rating });
   };
+
+  const handleDeleteClick = () => setConfirmDelete(true);
+  const handleDeleteCancel = () => setConfirmDelete(false);
+  const handleDeleteConfirm = () => onDelete(book.id);
 
   return (
     <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 340,
@@ -153,6 +159,7 @@ function BookDetailPanel({ book, onClose, onUpdate }) {
       <CoinBurst active={burst} onDone={() => setBurst(false)} />
       <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none",
         border: "none", color: "#8A7A6A", fontSize: 22, cursor: "pointer", lineHeight: 1, zIndex: 5 }}>×</button>
+
       {/* カバー */}
       <div style={{ height: 200, background: "#0A0604", display: "flex", alignItems: "center",
         justifyContent: "center", position: "relative", overflow: "hidden" }}>
@@ -170,6 +177,7 @@ function BookDetailPanel({ book, onClose, onUpdate }) {
             title={book.book?.title || ""} author={book.book?.author || ""} size={100} />
         )}
       </div>
+
       {/* 詳細 */}
       <div style={{ padding: "16px 20px", flex: 1, overflowY: "auto" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: "#E8D5B0", marginBottom: 4 }}>{book.book?.title}</div>
@@ -227,6 +235,7 @@ function BookDetailPanel({ book, onClose, onUpdate }) {
               outline: "none", boxSizing: "border-box" }} />
         </div>
 
+        {/* 保存ボタン */}
         <button onClick={handleSave} style={{ width: "100%", padding: "12px", background: "#C4956A",
           border: "none", borderRadius: 10, color: "#1A0F08", fontWeight: 700, fontSize: 14,
           cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.5,
@@ -237,6 +246,72 @@ function BookDetailPanel({ book, onClose, onUpdate }) {
           onMouseUp={e => e.target.style.transform = "scale(1)"}>
           💾 保存する
         </button>
+
+        {/* 削除エリア */}
+        <div style={{ marginTop: 12, borderTop: "1px solid rgba(196,168,130,0.08)", paddingTop: 12 }}>
+          {!confirmDelete ? (
+            <button onClick={handleDeleteClick} style={{
+              width: "100%", padding: "10px",
+              background: "transparent",
+              border: "1px solid rgba(232,112,112,0.25)",
+              borderRadius: 10, color: "#8A6A6A", fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+              transition: "all 0.15s",
+            }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = "rgba(232,112,112,0.08)";
+                e.currentTarget.style.borderColor = "rgba(232,112,112,0.5)";
+                e.currentTarget.style.color = "#E87070";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "rgba(232,112,112,0.25)";
+                e.currentTarget.style.color = "#8A6A6A";
+              }}>
+              🗑️ 本棚から削除する
+            </button>
+          ) : (
+            /* 確認ステップ */
+            <div style={{
+              background: "rgba(232,112,112,0.08)",
+              border: "1px solid rgba(232,112,112,0.3)",
+              borderRadius: 10, padding: "12px 14px",
+            }}>
+              <div style={{ fontSize: 12, color: "#E8D5B0", marginBottom: 4, fontWeight: 600 }}>
+                本当に削除しますか？
+              </div>
+              <div style={{ fontSize: 11, color: "#8A7A6A", marginBottom: 12 }}>
+                「{book.book?.title}」を本棚から削除します。この操作は元に戻せません。
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleDeleteCancel} style={{
+                  flex: 1, padding: "8px",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(196,168,130,0.2)",
+                  borderRadius: 8, color: "#8A7A6A", fontSize: 12,
+                  cursor: "pointer", fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.color = "#E8D5B0"}
+                  onMouseLeave={e => e.currentTarget.style.color = "#8A7A6A"}>
+                  キャンセル
+                </button>
+                <button onClick={handleDeleteConfirm} style={{
+                  flex: 1, padding: "8px",
+                  background: "rgba(232,112,112,0.15)",
+                  border: "1px solid rgba(232,112,112,0.4)",
+                  borderRadius: 8, color: "#E87070", fontSize: 12, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                  transition: "all 0.15s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = "rgba(232,112,112,0.28)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "rgba(232,112,112,0.15)"}>
+                  削除する
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -308,6 +383,13 @@ export default function BookshelfDashboard() {
     const refreshed = await fetchUserBooks(userId);
     setBooks(refreshed || []);
     setSelectedBook(null);
+  };
+
+  const handleBookDelete = async (userBookId) => {
+  await deleteUserBook(userBookId);
+  const refreshed = await fetchUserBooks(userId);
+  setBooks(refreshed || []);
+  setSelectedBook(null);
   };
 
   const handleLogout = async () => {
@@ -526,7 +608,12 @@ export default function BookshelfDashboard() {
 
       {showSearch && <AddBookModal onClose={() => setShowSearch(false)} onAdd={handleAddBook} />}
       {selectedBook && (
-        <BookDetailPanel book={selectedBook} onClose={() => setSelectedBook(null)} onUpdate={handleBookUpdate} />
+        <BookDetailPanel
+          book={selectedBook}
+          onClose={() => setSelectedBook(null)}
+          onUpdate={handleBookUpdate}
+          onDelete={handleBookDelete}
+        />
       )}
     </div>
   );

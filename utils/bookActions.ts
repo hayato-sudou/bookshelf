@@ -115,6 +115,15 @@ export async function recordReadingProgress(
       amount: coinsEarned,
     });
   }
-
   return coinsEarned;
+}
+
+// ── 本を削除（user_booksレコードの物理削除）──────────────────
+export async function deleteUserBook(userBookId: string) {
+  const { error } = await supabase
+    .from("user_books")
+    .delete()
+    .eq("id", userBookId);
+
+  if (error) throw error;
 }

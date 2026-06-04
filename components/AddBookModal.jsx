@@ -66,6 +66,21 @@ export function ColorCover({ color, title, author, size = 80 }) {
   );
 }
 
+function mapVolume(volume) {
+  const info = volume?.volumeInfo ?? {};
+  return {
+    id:           volume.id,
+    title:        info.title ?? "タイトル不明",
+    authors:      info.authors ?? [],
+    thumbnail:    info.imageLinks?.thumbnail?.replace("http://", "https://") ?? null,
+    publisher:    info.publisher ?? null,
+    pageCount:    info.pageCount ?? null,
+    category:     info.categories?.[0]?.split(" / ")[0] ?? "",
+    description:  info.description ?? "",
+    publishedDate: info.publishedDate ?? "",
+  };
+}
+
 // ─── 検索結果の1件分カード ────────────────────────────────────────────────────
 function SearchResultCard({ item, onSelect }) {
   const [hovered, setHovered] = useState(false);
@@ -203,7 +218,7 @@ const handleSearch = async () => {
     });
     const res   = await fetch(`/api/books/search?${params}`);
     const data  = await res.json();
-    const items = data.items ?? [];
+    const items = (data.items ?? []).map(mapVolume);
     setResults(items);
     setHasMore(items.length >= INITIAL_COUNT);
     setStartIndex(INITIAL_COUNT);
@@ -225,7 +240,7 @@ const handleLoadMore = useCallback(async () => {
     });
     const res   = await fetch(`/api/books/search?${params}`);
     const data  = await res.json();
-    const items = data.items ?? [];
+    const items = (data.items ?? []).map(mapVolume);
     setResults(prev => {
       const existingIds = new Set(prev.map(i => i.id));
       return [...prev, ...items.filter(i => !existingIds.has(i.id))];
