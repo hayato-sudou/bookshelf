@@ -182,17 +182,15 @@ export default function AddBookModal({ onClose, onAdd }) {
   }, [tab]);
 
   // ── Google Books 検索 ──
-  const handleSearch = async () => {
-    if (!query.trim()) return;
-    setLoading(true); setSearched(true);
-    try {
-      const params = new URLSearchParams({ q: query.trim(), maxResults: "10" });
-      const res = await fetch(`/api/books/search?${params}`);
-      const data = await res.json();
-      setResults(data.items || []);   // ← data.items がそのまま入るので構造は変わらない
-    } catch { setResults([]); }
-    setLoading(false);
-  };
+const handleSearch = async () => {
+  if (!query.trim()) return;
+  setLoading(true); setSearched(true);
+  try {
+    const items = await searchBooks(query.trim(), 10);
+    setResults(items);   // ← BookInfo型（authors, pageCount等が整形済み）
+  } catch { setResults([]); }
+  setLoading(false);
+};
 
   // ── API結果から本を登録 ──
   const handleSelectApiBook = (item) => {
@@ -303,7 +301,7 @@ export default function AddBookModal({ onClose, onAdd }) {
                   <input ref={searchInputRef} value={query}
                     onChange={e => setQuery(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && handleSearch()}
-                    placeholder="タイトル・著者名・ISBNで検索..."
+                    placeholder="タイトル / 著者:夏目漱石 / ISBN番号"
                     style={inputStyle}
                     onFocus={e => e.target.style.borderColor = "rgba(196,168,130,0.4)"}
                     onBlur={e => e.target.style.borderColor = "rgba(196,168,130,0.18)"} />
