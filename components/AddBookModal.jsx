@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { searchBooks } from "../utils/googleBooksApi";
 
 // ─── カバーカラー定義 ──────────────────────────────────────────────────────────
 // books.cover_color に保存するカラーコードと、それに対応する文字色・アクセント色
@@ -67,7 +68,6 @@ export function ColorCover({ color, title, author, size = 80 }) {
 
 // ─── 検索結果の1件分カード ────────────────────────────────────────────────────
 function SearchResultCard({ item, onSelect }) {
-  const info = item.volumeInfo;
   const [hovered, setHovered] = useState(false);
   return (
     <div onClick={() => onSelect(item)}
@@ -84,31 +84,31 @@ function SearchResultCard({ item, onSelect }) {
       <div style={{ width: 44, height: 66, flexShrink: 0, borderRadius: 4,
         overflow: "hidden", background: "#1A0F08",
         boxShadow: "2px 2px 8px rgba(0,0,0,0.4)" }}>
-        {info.imageLinks?.thumbnail
-          ? <img src={info.imageLinks.thumbnail} alt=""
+        {item.thumbnail
+          ? <img src={item.thumbnail} alt=""
               style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <ColorCover color={COVER_COLORS[0].bg} title={info.title} author="" size={44} />}
+          : <ColorCover color={COVER_COLORS[0].bg} title={item.title} author="" size={44} />}
       </div>
       {/* テキスト情報 */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: "#E8D5B0", lineHeight: 1.35,
           overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-          {info.title}
+          {item.title}
         </div>
         <div style={{ fontSize: 11, color: "#8A7A6A", marginTop: 3 }}>
-          {info.authors?.join(", ") || "著者不明"}
+          {item.authors?.join(", ") || "著者不明"}
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
-          {info.pageCount && (
+          {item.pageCount && (
             <span style={{ fontSize: 10, color: "#7A6A5A",
               background: "rgba(196,168,130,0.1)", borderRadius: 4, padding: "2px 6px" }}>
-              {info.pageCount}P
+              {item.pageCount}P
             </span>
           )}
-          {info.publishedDate && (
+          {item.publishedDate && (
             <span style={{ fontSize: 10, color: "#7A6A5A",
               background: "rgba(196,168,130,0.1)", borderRadius: 4, padding: "2px 6px" }}>
-              {info.publishedDate.slice(0,4)}年
+              {item.publishedDate.slice(0,4)}年
             </span>
           )}
         </div>
@@ -186,31 +186,28 @@ export default function AddBookModal({ onClose, onAdd }) {
     if (!query.trim()) return;
     setLoading(true); setSearched(true);
     try {
-      const res = await fetch(
-        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=10`
-      );
-      const data = await res.json();
-      setResults(data.items || []);
+      const books = await searchBooks(query, 10);
+      setResults(books);              // ← 整形済み BookInfo[] が入る
     } catch { setResults([]); }
     setLoading(false);
   };
 
   // ── API結果から本を登録 ──
   const handleSelectApiBook = (item) => {
-    const info = item.volumeInfo;
+    // item は BookInfo 型。?.や?.[0]など防御コードがすべて不要に
     onAdd({
       source: "google_books",
       google_books_id: item.id,
-      title: info.title,
-      author: info.authors?.[0] || "",
-      page_count: info.pageCount || null,
-      thumbnail_url: info.imageLinks?.thumbnail?.replace("http://", "https://") || null,
+      title: item.title,
+      author: item.authors[0] ?? "",
+      page_count: item.pageCount,
+      thumbnail_url: item.thumbnail,
       cover_color: null,
-      cover_style: info.imageLinks?.thumbnail ? "image" : "color",
-      category: info.categories?.[0]?.split(" / ")[0] || "",
-      description: info.description || "",
-      publisher: info.publisher || "",
-      published_date: info.publishedDate || "",
+      cover_style: item.thumbnail ? "image" : "color",
+      category: item.category,
+      description: item.description,
+      publisher: item.publisher ?? "",
+      published_date: item.publishedDate,
     });
     onClose();
   };
