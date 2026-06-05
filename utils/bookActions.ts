@@ -4,15 +4,22 @@ import { supabase } from "./supabase";
 export async function fetchUserBooks(userId: string) {
   const { data, error } = await supabase
     .from("user_books")
-    .select(`
-      *,
-      book:books(*)
-    `)
+    .select(`*, book:books(*)`)
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
   return data;
+}
+
+// ── 本棚名を更新 ────────────────────────────────────────────
+export async function updateShelfName(userId: string, name: string) {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ shelf_name: name.trim() || "わたしの本棚" })
+    .eq("id", userId);
+
+  if (error) throw error;
 }
 
 // ── 本を追加 ────────────────────────────────────────────────
@@ -30,11 +37,9 @@ export async function addBook(userId: string, bookData: {
   publisher: string;
   published_date: string;
 }) {
-  // 1. booksテーブルに本を登録（すでにあればそのまま使う）
   let bookId: string;
 
   if (bookData.google_books_id) {
-    // Google Books IDで既存チェック
     const { data: existing } = await supabase
       .from("books")
       .select("id")
@@ -53,7 +58,6 @@ export async function addBook(userId: string, bookData: {
       bookId = data.id;
     }
   } else {
-    // 手動登録は毎回新規作成
     const { data, error } = await supabase
       .from("books")
       .insert(bookData)
@@ -63,24 +67,22 @@ export async function addBook(userId: string, bookData: {
     bookId = data.id;
   }
 
-  // 2. user_booksに追加
   const { error } = await supabase
     .from("user_books")
-    .insert({ user_id: userId, book_id: bookId, status: "unread" });
+    .insert({ user_id: userId, book_id: bookId, status: "unread", tags: [] });
 
   if (error) throw error;
 }
 
-// ── 読書進捗・メモ・評価を更新 ──────────────────────────────
+// ── 読書進捗・メモ・評価・タグを更新 ──────────────────────────
 export async function updateUserBook(userBookId: string, updates: {
   current_page?: number;
   status?: "unread" | "reading" | "completed";
   rating?: number;
   notes?: string;
+  tags?: string[];
 }) {
-  // statusを自動判定
   if (updates.current_page !== undefined) {
-    // ページ数が1以上なら「読書中」、0なら「未読」のまま
     if (updates.current_page > 0 && !updates.status) {
       updates.status = "reading";
     }
@@ -102,12 +104,10 @@ export async function recordReadingProgress(
 ) {
   if (pagesAdded <= 0) return;
 
-  // 読書ログに記録
   await supabase
     .from("reading_logs")
     .insert({ user_book_id: userBookId, pages_read: pagesAdded });
 
-  // コイン加算（10ページ = 1コイン）
   const coinsEarned = Math.floor(pagesAdded / 10);
   if (coinsEarned > 0) {
     await supabase.rpc("increment_coins", {
@@ -115,6 +115,7 @@ export async function recordReadingProgress(
       amount: coinsEarned,
     });
   }
+
   return coinsEarned;
 }
 
@@ -127,3 +128,4 @@ export async function deleteUserBook(userBookId: string) {
 
   if (error) throw error;
 }
+
