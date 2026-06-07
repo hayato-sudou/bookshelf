@@ -78,7 +78,7 @@ export async function addBook(userId: string, bookData: {
 export async function updateUserBook(userBookId: string, updates: {
   current_page?: number;
   status?: "unread" | "reading" | "completed";
-  rating?: number;
+  rating?: number | null;
   notes?: string;
   tags?: string[];
 }) {
@@ -86,6 +86,11 @@ export async function updateUserBook(userBookId: string, updates: {
     if (updates.current_page > 0 && !updates.status) {
       updates.status = "reading";
     }
+  }
+
+  // rating が 0 の場合は null に変換（DB制約: 1〜5のみ許容）
+  if (updates.rating === 0) {
+    updates.rating = null;
   }
 
   const { error } = await supabase

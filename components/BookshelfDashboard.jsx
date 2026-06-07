@@ -440,7 +440,19 @@ function BookDetailPanel({ book, allCategories, onClose, onUpdate, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const pageCount = book.book?.page_count || 0;
 
+  // book.idが変わるたびに全stateをリセット
+  useEffect(() => {
+    console.log("useEffect発火 book.id:", book.id, "book.tags:", book.tags); // ← 追加
+    setPage(book.current_page || 0);
+    setNote(book.notes || "");
+    setRating(book.rating || 0);
+    setTags(book.tags ?? []);
+    setConfirmDelete(false);
+  }, [book.id]);
+
   const handleSave = () => {
+    console.log("保存するtags:", tags);        // ← 追加
+    console.log("book.tags:", book.tags);      // ← 追加
     const added = Math.max(0, page - (book.current_page || 0));
     if (added > 0) setBurst(true);
     onUpdate({ ...book, current_page: page, notes: note, rating, tags });
@@ -773,27 +785,31 @@ export default function BookshelfDashboard() {
   };
 
   const handleBookUpdate = async (updated) => {
-    const original   = books.find(b => b.id === updated.id);
-    const pagesAdded = Math.max(0, (updated.current_page || 0) - (original?.current_page || 0));
+    try {
+      const original   = books.find(b => b.id === updated.id);
+      const pagesAdded = Math.max(0, (updated.current_page || 0) - (original?.current_page || 0));
 
-    await updateUserBook(updated.id, {
-      current_page: updated.current_page,
-      rating:       updated.rating,
-      notes:        updated.notes,
-      tags:         updated.tags,
-      status: updated.current_page >= (updated.book?.page_count || 0)
-        ? "completed"
-        : updated.current_page > 0 ? "reading" : "unread",
-    });
+      await updateUserBook(updated.id, {
+        current_page: updated.current_page,
+        rating:       updated.rating,
+        notes:        updated.notes,
+        tags:         updated.tags,
+        status: updated.current_page >= (updated.book?.page_count || 0)
+          ? "completed"
+          : updated.current_page > 0 ? "reading" : "unread",
+      });
 
-    if (pagesAdded > 0) {
-      const earned = await recordReadingProgress(updated.id, userId, pagesAdded);
-      if (earned) setCoins(c => c + earned);
+      if (pagesAdded > 0) {
+        const earned = await recordReadingProgress(updated.id, userId, pagesAdded);
+        if (earned) setCoins(c => c + earned);
+      }
+
+      const refreshed = await fetchUserBooks(userId);
+      setBooks(refreshed || []);
+    } catch (e) {
+      console.error("保存失敗:", e);
+      // 必要に応じてユーザーへのエラー表示を追加
     }
-
-    const refreshed = await fetchUserBooks(userId);
-    setBooks(refreshed || []);
-    // ↓ setSelectedBookId(null) を削除。IDを保持したままbooksを更新するだけでOK
   };
 
   const handleBookDelete = async (userBookId) => {
