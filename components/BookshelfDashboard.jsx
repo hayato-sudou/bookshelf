@@ -594,7 +594,9 @@ function BookDetailPanel({ book, allCategories, onClose, onUpdate, onDelete }) {
           <span style={{ fontSize: 18 }}>🪙</span>
           <div>
             <div style={{ fontSize: 11, color: "#C4A882", fontWeight: 600 }}>
-              保存で +{Math.max(0, Math.floor((page - (book.current_page || 0)) / 10))} コイン獲得！
+              保存で +{Math.max(0, Math.floor(
+                Math.max(0, page - (book.max_page_reached || 0)) / 10
+              ))} コイン獲得！
             </div>
             <div style={{ fontSize: 10, color: "#6A5A4A" }}>10ページ読む = 1コイン</div>
           </div>
@@ -786,29 +788,27 @@ export default function BookshelfDashboard() {
 
   const handleBookUpdate = async (updated) => {
     try {
-      const original   = books.find(b => b.id === updated.id);
-      const pagesAdded = Math.max(0, (updated.current_page || 0) - (original?.current_page || 0));
+      const original = books.find(b => b.id === updated.id);
+      const newPage  = updated.current_page || 0;
 
       await updateUserBook(updated.id, {
-        current_page: updated.current_page,
+        current_page: newPage,
         rating:       updated.rating,
         notes:        updated.notes,
         tags:         updated.tags,
-        status: updated.current_page >= (updated.book?.page_count || 0)
+        status: newPage >= (updated.book?.page_count || 0)
           ? "completed"
-          : updated.current_page > 0 ? "reading" : "unread",
+          : newPage > 0 ? "reading" : "unread",
       });
 
-      if (pagesAdded > 0) {
-        const earned = await recordReadingProgress(updated.id, userId, pagesAdded);
-        if (earned) setCoins(c => c + earned);
-      }
+      // pagesAdded ではなく newPage を渡す（関数内で max_page_reached と比較）
+      const earned = await recordReadingProgress(updated.id, userId, newPage);
+      if (earned > 0) setCoins(c => c + earned);
 
       const refreshed = await fetchUserBooks(userId);
       setBooks(refreshed || []);
     } catch (e) {
       console.error("保存失敗:", e);
-      // 必要に応じてユーザーへのエラー表示を追加
     }
   };
 
@@ -1122,6 +1122,13 @@ export default function BookshelfDashboard() {
           </div>
         </main>
       </div>
+
+    {showSearch && (
+    <AddBookModal
+      onClose={() => setShowSearch(false)}
+      onAdd={handleAddBook}
+    />
+    )}
 
     {selectedBook && (
       <BookDetailPanel

@@ -88,7 +88,6 @@ export async function updateUserBook(userBookId: string, updates: {
     }
   }
 
-  // rating が 0 の場合は null に変換（DB制約: 1〜5のみ許容）
   if (updates.rating === 0) {
     updates.rating = null;
   }
@@ -105,15 +104,40 @@ export async function updateUserBook(userBookId: string, updates: {
 export async function recordReadingProgress(
   userBookId: string,
   userId: string,
-  pagesAdded: number
-) {
-  if (pagesAdded <= 0) return;
+  newPage: number  // current_page の新しい値を受け取る
+): Promise<number> {
+  // max_page_reached を取得
+  const { data, error: fetchError } = await supabase
+    .from("user_books")
+    .select("max_page_reached")
+    .eq("id", userBookId)
+    .single();
 
-  await supabase
-    .from("reading_logs")
-    .insert({ user_book_id: userBookId, pages_read: pagesAdded });
+  if (fetchError) throw fetchError;
 
-  const coinsEarned = Math.floor(pagesAdded / 10);
+  const maxReached = data.max_page_reached ?? 0;
+
+  // 新規到達ページ分だけコイン対象
+  const newPages = Math.max(0, newPage - maxReached);
+
+  // max_page_reached を更新（戻しても上書きしない）
+  if (newPage > maxReached) {
+    const { error: updateError } = await supabase
+      .from("user_books")
+      .update({ max_page_reached: newPage })
+      .eq("id", userBookId);
+
+    if (updateError) throw updateError;
+  }
+
+  // ログ記録（newPages > 0 の時のみ）
+  if (newPages > 0) {
+    await supabase
+      .from("reading_logs")
+      .insert({ user_book_id: userBookId, pages_read: newPages });
+  }
+
+  const coinsEarned = Math.floor(newPages / 10);
   if (coinsEarned > 0) {
     await supabase.rpc("increment_coins", {
       user_id: userId,
