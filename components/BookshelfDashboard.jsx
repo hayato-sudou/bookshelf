@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/utils/supabase";
 import {
@@ -242,6 +243,8 @@ function CategoryEditor({ tags, allCategories, onChange }) {
   };
 
   const remove = (cat) => onChange(tags.filter(t => t !== cat));
+  const [petBlink, setPetBlink] = useState(false);
+  const [petWag,   setPetWag]   = useState(false);
 
   const handleKeyDown = (e) => {
     if ((e.key === "Enter" || e.key === ",") && inputVal.trim()) {
@@ -438,6 +441,7 @@ function BookDetailPanel({ book, allCategories, onClose, onUpdate, onDelete }) {
   const [tags,          setTags]          = useState(book.tags ?? []);
   const [burst,         setBurst]         = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const router = useRouter();
   const pageCount = book.book?.page_count || 0;
 
   // book.idが変わるたびに全stateをリセット
@@ -732,6 +736,7 @@ export default function BookshelfDashboard() {
   const [petHappiness,   setPetHappiness]   = useState(72);
   const [petBlink,       setPetBlink]       = useState(false);
   const [petWag,         setPetWag]         = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -879,7 +884,11 @@ export default function BookshelfDashboard() {
           {[
             { icon: "🏠", label: "本棚",    active: true },
             { icon: "🔍", label: "検索",    action: () => setShowSearch(true) },
-            { icon: "🐾", label: "ペット" },
+            { icon: "🏡", label: "箱庭",    action: () => {
+                sessionStorage.setItem("pendingGardenCoins", String(coins));
+                router.push("/garden");
+              }
+            },
             { icon: "🏪", label: "ショップ" },
           ].map((item, i) => (
             <button
