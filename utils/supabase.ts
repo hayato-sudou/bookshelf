@@ -24,8 +24,6 @@ export type UserBook = {
   user_id: string;
   book_id: string;
   status: "unread" | "reading" | "completed";
-  current_page: number;
-  max_page_reached: number;  // 追加
   rating: number | null;
   notes: string | null;
   tags: string[];

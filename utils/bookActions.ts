@@ -23,20 +23,23 @@ export async function updateShelfName(userId: string, name: string) {
 }
 
 // ── 本を追加 ────────────────────────────────────────────────
-export async function addBook(userId: string, bookData: {
-  source: string;
-  google_books_id: string | null;
-  title: string;
-  author: string;
-  page_count: number | null;
-  thumbnail_url: string | null;
-  cover_color: string | null;
-  cover_style: string;
-  category: string;
-  description: string;
-  publisher: string;
-  published_date: string;
-}) {
+export async function addBook(
+  userId: string,
+  bookData: {
+    source: string;
+    google_books_id: string | null;
+    title: string;
+    author: string;
+    page_count: number | null;
+    thumbnail_url: string | null;
+    cover_color: string | null;
+    cover_style: string;
+    category: string;
+    description: string;
+    publisher: string;
+    published_date: string;
+  }
+) {
   let bookId: string;
 
   if (bookData.google_books_id) {
@@ -74,20 +77,16 @@ export async function addBook(userId: string, bookData: {
   if (error) throw error;
 }
 
-// ── 読書進捗・メモ・評価・タグを更新 ──────────────────────────
-export async function updateUserBook(userBookId: string, updates: {
-  current_page?: number;
-  status?: "unread" | "reading" | "completed";
-  rating?: number | null;
-  notes?: string;
-  tags?: string[];
-}) {
-  if (updates.current_page !== undefined) {
-    if (updates.current_page > 0 && !updates.status) {
-      updates.status = "reading";
-    }
+// ── ステータス・メモ・評価・タグを更新 ──────────────────────
+export async function updateUserBook(
+  userBookId: string,
+  updates: {
+    status?: "unread" | "reading" | "completed";
+    rating?: number | null;
+    notes?: string;
+    tags?: string[];
   }
-
+) {
   if (updates.rating === 0) {
     updates.rating = null;
   }
@@ -100,55 +99,7 @@ export async function updateUserBook(userBookId: string, updates: {
   if (error) throw error;
 }
 
-// ── 読書ログを記録してコインを加算 ──────────────────────────
-export async function recordReadingProgress(
-  userBookId: string,
-  userId: string,
-  newPage: number  // current_page の新しい値を受け取る
-): Promise<number> {
-  // max_page_reached を取得
-  const { data, error: fetchError } = await supabase
-    .from("user_books")
-    .select("max_page_reached")
-    .eq("id", userBookId)
-    .single();
-
-  if (fetchError) throw fetchError;
-
-  const maxReached = data.max_page_reached ?? 0;
-
-  // 新規到達ページ分だけコイン対象
-  const newPages = Math.max(0, newPage - maxReached);
-
-  // max_page_reached を更新（戻しても上書きしない）
-  if (newPage > maxReached) {
-    const { error: updateError } = await supabase
-      .from("user_books")
-      .update({ max_page_reached: newPage })
-      .eq("id", userBookId);
-
-    if (updateError) throw updateError;
-  }
-
-  // ログ記録（newPages > 0 の時のみ）
-  if (newPages > 0) {
-    await supabase
-      .from("reading_logs")
-      .insert({ user_book_id: userBookId, pages_read: newPages });
-  }
-
-  const coinsEarned = Math.floor(newPages / 10);
-  if (coinsEarned > 0) {
-    await supabase.rpc("increment_coins", {
-      user_id: userId,
-      amount: coinsEarned,
-    });
-  }
-
-  return coinsEarned;
-}
-
-// ── 本を削除（user_booksレコードの物理削除）──────────────────
+// ── 本を削除（user_books レコードの物理削除）───────────────
 export async function deleteUserBook(userBookId: string) {
   const { error } = await supabase
     .from("user_books")
@@ -157,4 +108,3 @@ export async function deleteUserBook(userBookId: string) {
 
   if (error) throw error;
 }
-
