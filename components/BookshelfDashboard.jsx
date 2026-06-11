@@ -9,6 +9,7 @@ import {
   deleteUserBook,
 } from "@/utils/bookActions";
 import AddBookModal, { ColorCover } from "@/components/AddBookModal";
+import Sidebar from "@/components/Sidebar";
 
 const STATUS_CONFIG = {
   all:       { label: "すべて",  color: "#C4A882" },
@@ -417,7 +418,7 @@ function BookDetailPanel({ book, allCategories, onClose, onUpdate, onDelete }) {
 
   return (
     <div style={{
-      position: "fixed", right: 0, top: 0, bottom: 0, width: 340,
+      position: "fixed", right: 0, top: 0, bottom: 0, width: "40vw",
       background: "#140C06", borderLeft: "1px solid rgba(196,168,130,0.15)",
       boxShadow: "-20px 0 60px rgba(0,0,0,0.5)", zIndex: 80,
       display: "flex", flexDirection: "column", overflow: "hidden",
@@ -715,11 +716,6 @@ export default function BookshelfDashboard() {
     setSelectedBookId(null);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = "/auth";
-  };
-
   const filteredBooks = books
     .filter(b => filter === "all" || b.status === filter)
     .filter(b => !categoryFilter || (b.tags ?? []).includes(categoryFilter));
@@ -751,41 +747,7 @@ export default function BookshelfDashboard() {
 
       <div style={{ display: "flex", minHeight: "100vh" }}>
 
-        {/* Sidebar */}
-        <aside
-          aria-label="サイドバー"
-          style={{
-            width: 64, background: "rgba(10,6,3,0.8)",
-            borderRight: "1px solid rgba(196,168,130,0.08)",
-            display: "flex", flexDirection: "column", alignItems: "center",
-            padding: "20px 0", gap: 8, position: "sticky", top: 0, height: "100vh",
-          }}
-        >
-          <div style={{ fontSize: 26, marginBottom: 16 }}>📖</div>
-          {[
-            { icon: "🏠", label: "本棚",  active: true },
-            { icon: "🔍", label: "検索",  action: () => setShowSearch(true) },
-          ].map((item, i) => (
-            <button
-              key={i}
-              onClick={item.action}
-              title={item.label}
-              aria-label={item.label}
-              style={{
-                width: 42, height: 42, borderRadius: 12, border: "none",
-                background: item.active ? "rgba(196,168,130,0.15)" : "transparent",
-                fontSize: 20, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "background 0.2s",
-                boxShadow: item.active ? "0 0 0 1px rgba(196,168,130,0.2)" : "none",
-              }}
-              onMouseEnter={e => !item.active && (e.currentTarget.style.background = "rgba(196,168,130,0.08)")}
-              onMouseLeave={e => !item.active && (e.currentTarget.style.background = "transparent")}
-            >
-              {item.icon}
-            </button>
-          ))}
-        </aside>
+        <Sidebar />
 
         {/* Main */}
         <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
@@ -815,19 +777,6 @@ export default function BookshelfDashboard() {
               onMouseUp={e => e.target.style.transform = "scale(1)"}
             >
               ＋ 本を追加
-            </button>
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: "8px 14px", background: "transparent",
-                border: "1px solid rgba(196,168,130,0.2)", borderRadius: 10,
-                color: "#6A5A4A", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                transition: "color 0.15s, border-color 0.15s",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = "#E8D5B0"; e.currentTarget.style.borderColor = "rgba(196,168,130,0.4)"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = "#6A5A4A"; e.currentTarget.style.borderColor = "rgba(196,168,130,0.2)"; }}
-            >
-              ログアウト
             </button>
           </header>
 
