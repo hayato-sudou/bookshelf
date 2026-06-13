@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { searchBooks } from "../utils/googleBooksApi";
 import { uploadBookCover, deleteBookCover } from "../utils/storageActions";
 import { supabase } from "../utils/supabase";
+import CategoryEditor from "./CategoryEditor";
 
 // ─── カバーカラー定義 ──────────────────────────────────────────────────────────
 // books.cover_color に保存するカラーコードと、それに対応する文字色・アクセント色
@@ -177,7 +178,7 @@ const inputStyle = {
 //   onClose: () => void
 //   onAdd:   (bookData: object) => void
 //     bookData は books テーブルの挿入データに対応
-export default function AddBookModal({ onClose, onAdd }) {
+export default function AddBookModal({ onClose, onAdd, allCategories = [] }) {
   const [tab, setTab] = useState("search"); // "search" | "manual"
 
   // 検索タブ
@@ -195,7 +196,7 @@ export default function AddBookModal({ onClose, onAdd }) {
 
   // 手動登録タブ
   const [manual, setManual] = useState({
-    title: "", author: "", pageCount: "", category: "",
+    title: "", author: "", pageCount: "", tags: [],
     coverColor: COVER_COLORS[0].bg,
   });
   const [coverImageUrl,  setCoverImageUrl]  = useState(""); // アップロード済みURL
@@ -336,7 +337,8 @@ useEffect(() => {
       thumbnail_url: hasCover ? coverImageUrl : null,
       cover_color: hasCover ? null : manual.coverColor,
       cover_style: hasCover ? "image" : "color",
-      category: manual.category.trim(),
+      category: manual.tags[0] ?? "",  // booksテーブルのcategoryカラムには先頭タグを入れる
+      tags: manual.tags,               // user_booksのtagsカラムに全タグを入れる
       description: "", publisher: "", published_date: "",
     });
     onClose();
@@ -554,25 +556,25 @@ useEffect(() => {
                 </div>
 
                 {/* ページ数 / カテゴリ */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <label style={labelStyle}>総ページ数（任意）</label>
-                    <input type="number" min="1" value={manual.pageCount}
-                      onChange={e => setManual(p => ({...p, pageCount: e.target.value}))}
-                      placeholder="例: 320"
-                      style={inputStyle}
-                      onFocus={e => e.target.style.borderColor = "rgba(196,168,130,0.4)"}
-                      onBlur={e => e.target.style.borderColor = "rgba(196,168,130,0.18)"} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>カテゴリ（任意）</label>
-                    <input value={manual.category}
-                      onChange={e => setManual(p => ({...p, category: e.target.value}))}
-                      placeholder="例: 小説、ビジネス"
-                      style={inputStyle}
-                      onFocus={e => e.target.style.borderColor = "rgba(196,168,130,0.4)"}
-                      onBlur={e => e.target.style.borderColor = "rgba(196,168,130,0.18)"} />
-                  </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>総ページ数（任意）</label>
+                  <input
+                    type="number" min="1" value={manual.pageCount}
+                    onChange={e => setManual(p => ({...p, pageCount: e.target.value}))}
+                    placeholder="例: 320"
+                    style={inputStyle}
+                    onFocus={e => e.target.style.borderColor = "rgba(196,168,130,0.4)"}
+                    onBlur={e => e.target.style.borderColor = "rgba(196,168,130,0.18)"}
+                  />
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>カテゴリ（任意）</label>
+                  <CategoryEditor
+                    tags={manual.tags}
+                    allCategories={allCategories}
+                    onChange={tags => setManual(p => ({...p, tags}))}
+                  />
                 </div>
 
                 {/* 表紙設定セクション */}

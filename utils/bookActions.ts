@@ -38,6 +38,7 @@ export async function addBook(
     description: string;
     publisher: string;
     published_date: string;
+    tags?: string[];  // 追加
   }
 ) {
   let bookId: string;
@@ -72,7 +73,12 @@ export async function addBook(
 
   const { error } = await supabase
     .from("user_books")
-    .insert({ user_id: userId, book_id: bookId, status: "unread", tags: [] });
+    .insert({
+      user_id: userId,
+      book_id: bookId,
+      status: "unread",
+      tags: bookData.tags ?? [],
+    });
 
   if (error) throw error;
 }
