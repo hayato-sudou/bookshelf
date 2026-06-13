@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { searchBooks } from "../utils/googleBooksApi";
+import { uploadBookCover, deleteBookCover } from "../utils/storageActions";
+import { supabase } from "../utils/supabase";
 
 // ─── カバーカラー定義 ──────────────────────────────────────────────────────────
 // books.cover_color に保存するカラーコードと、それに対応する文字色・アクセント色
@@ -194,13 +196,50 @@ export default function AddBookModal({ onClose, onAdd }) {
   // 手動登録タブ
   const [manual, setManual] = useState({
     title: "", author: "", pageCount: "", category: "",
-    coverColor: COVER_COLORS[0].bg, thumbnailUrl: "",
+    coverColor: COVER_COLORS[0].bg,
   });
+  const [coverImageUrl,  setCoverImageUrl]  = useState(""); // アップロード済みURL
+  const [coverImagePath, setCoverImagePath] = useState(""); // Storage上のpath（差し替え時の削除用）
+  const [uploadLoading,  setUploadLoading]  = useState(false);
+  const [uploadError,    setUploadError]    = useState("");
   const [manualError, setManualError] = useState("");
 
   useEffect(() => {
     if (tab === "search") setTimeout(() => searchInputRef.current?.focus(), 50);
   }, [tab]);
+
+const handleFileChange = async (file) => {
+  if (!file) return;
+
+  // 前の画像があれば削除
+  if (coverImagePath) {
+    await deleteBookCover(coverImagePath);
+  }
+
+  setUploadLoading(true);
+  setUploadError("");
+  setCoverImageUrl("");
+  setCoverImagePath("");
+
+  // userIdはsupabaseセッションから取得
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    setUploadError("ログインが必要です");
+    setUploadLoading(false);
+    return;
+  }
+
+  const result = await uploadBookCover(file, session.user.id);
+
+  if (!result.ok) {
+    setUploadError(result.error);
+  } else {
+    setCoverImageUrl(result.url);
+    setCoverImagePath(result.path);
+  }
+
+  setUploadLoading(false);
+};
 
 // ── Google Books 検索（初回） ──
 const handleSearch = async () => {
@@ -287,16 +326,16 @@ useEffect(() => {
   const handleManualSubmit = () => {
     if (!manual.title.trim()) { setManualError("タイトルは必須です"); return; }
     setManualError("");
-    const hasCoverUrl = manual.thumbnailUrl.trim() !== "";
+    const hasCover = coverImageUrl !== "";
     onAdd({
       source: "manual",
       google_books_id: null,
       title: manual.title.trim(),
       author: manual.author.trim(),
       page_count: manual.pageCount ? parseInt(manual.pageCount) : null,
-      thumbnail_url: hasCoverUrl ? manual.thumbnailUrl.trim() : null,
-      cover_color: hasCoverUrl ? null : manual.coverColor,
-      cover_style: hasCoverUrl ? "image" : "color",
+      thumbnail_url: hasCover ? coverImageUrl : null,
+      cover_color: hasCover ? null : manual.coverColor,
+      cover_style: hasCover ? "image" : "color",
       category: manual.category.trim(),
       description: "", publisher: "", published_date: "",
     });
@@ -545,29 +584,93 @@ useEffect(() => {
                   <div style={{ fontSize: 11, color: "#8A7A6A", marginBottom: 14,
                     textTransform: "uppercase", letterSpacing: 1 }}>表紙の設定</div>
 
-                  {/* URL入力 */}
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={labelStyle}>表紙画像 URL（任意）</label>
-                    <input value={manual.thumbnailUrl}
-                      onChange={e => setManual(p => ({...p, thumbnailUrl: e.target.value}))}
-                      placeholder="https://example.com/cover.jpg"
-                      style={inputStyle}
-                      onFocus={e => e.target.style.borderColor = "rgba(196,168,130,0.4)"}
-                      onBlur={e => e.target.style.borderColor = "rgba(196,168,130,0.18)"} />
-                    <div style={{ fontSize: 10, color: "#4A3A2A", marginTop: 5 }}>
-                      URLを入力すると画像が使われます。空欄の場合は下のカラーカバーが適用されます。
+                  {/* ドロップゾーン */}
+                  <div
+                    role="button"
+                    aria-label="表紙画像をアップロード。クリックまたはファイルをドロップ"
+                    tabIndex={0}
+                    onClick={() => document.getElementById("cover-file-input").click()}
+                    onKeyDown={e => e.key === "Enter" && document.getElementById("cover-file-input").click()}
+                    onDragOver={e => {
+                      e.preventDefault();
+                      e.currentTarget.style.borderColor = "rgba(196,168,130,0.6)";
+                      e.currentTarget.style.background  = "rgba(196,168,130,0.08)";
+                    }}
+                    onDragLeave={e => {
+                      e.currentTarget.style.borderColor = "rgba(196,168,130,0.2)";
+                      e.currentTarget.style.background  = "transparent";
+                    }}
+                    onDrop={e => {
+                      e.preventDefault();
+                      e.currentTarget.style.borderColor = "rgba(196,168,130,0.2)";
+                      e.currentTarget.style.background  = "transparent";
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleFileChange(file);
+                    }}
+                    style={{
+                      border: "1.5px dashed rgba(196,168,130,0.2)",
+                      borderRadius: 10, padding: "20px 16px",
+                      textAlign: "center", cursor: "pointer",
+                      transition: "border-color 0.15s, background 0.15s",
+                      marginBottom: 14,
+                    }}
+                  >
+                    <input
+                      id="cover-file-input"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: "none" }}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFileChange(file);
+                        // 同じファイルを再選択できるようにリセット
+                        e.target.value = "";
+                      }}
+                    />
+
+                    {uploadLoading ? (
+                      <div>
+                        <div style={{ fontSize: 22, display: "inline-block",
+                          animation: "spin 1s linear infinite", marginBottom: 6 }}>⟳</div>
+                        <div style={{ fontSize: 12, color: "#6A5A4A" }}>アップロード中...</div>
+                      </div>
+                    ) : coverImageUrl ? (
+                      <div>
+                        <div style={{ fontSize: 12, color: "#6BAE8C", marginBottom: 4 }}>✅ アップロード済み</div>
+                        <div style={{ fontSize: 11, color: "#4A3A2A" }}>クリックで画像を変更</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.4 }}>🖼️</div>
+                        <div style={{ fontSize: 12, color: "#6A5A4A", marginBottom: 4 }}>
+                          クリックまたはドラッグ&ドロップ
+                        </div>
+                        <div style={{ fontSize: 10, color: "#4A3A2A" }}>
+                          JPEG・PNG・WebP／5MB以下
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* エラー表示 */}
+                  {uploadError && (
+                    <div style={{
+                      fontSize: 11, color: "#E87070", marginBottom: 12,
+                      padding: "8px 12px", borderRadius: 8,
+                      background: "rgba(232,112,112,0.08)",
+                      border: "1px solid rgba(232,112,112,0.2)",
+                    }}>
+                      ❌ {uploadError}
                     </div>
-                  </div>
+                  )}
 
-                  {/* 区切り */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                    <div style={{ flex: 1, height: 1, background: "rgba(196,168,130,0.1)" }} />
-                    <span style={{ fontSize: 10, color: "#4A3A2A" }}>URLがない場合</span>
-                    <div style={{ flex: 1, height: 1, background: "rgba(196,168,130,0.1)" }} />
-                  </div>
-
-                  {/* カラーピッカー */}
-                  <div style={{ opacity: manual.thumbnailUrl ? 0.35 : 1, transition: "opacity 0.2s" }}>
+                  {/* URLがない場合のカラーピッカー */}
+                  <div style={{ opacity: coverImageUrl ? 0.35 : 1, transition: "opacity 0.2s" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <div style={{ flex: 1, height: 1, background: "rgba(196,168,130,0.1)" }} />
+                      <span style={{ fontSize: 10, color: "#4A3A2A" }}>画像がない場合はカラーカバーを使用</span>
+                      <div style={{ flex: 1, height: 1, background: "rgba(196,168,130,0.1)" }} />
+                    </div>
                     <label style={{ ...labelStyle, marginBottom: 10 }}>カバーカラーを選択</label>
                     <ColorPicker selected={manual.coverColor}
                       onChange={color => setManual(p => ({...p, coverColor: color}))} />
